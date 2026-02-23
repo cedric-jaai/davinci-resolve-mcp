@@ -68,8 +68,15 @@ def register_layout_tools(mcp, resolve, logger):
             preset_name: Name of the preset to export
             export_path: Path to export the preset file to
         """
+        from src.utils.path_validation import validate_path
+
         if resolve is None:
             return "Error: Not connected to DaVinci Resolve"
+
+        try:
+            export_path = validate_path(export_path)
+        except ValueError as e:
+            return f"Error: {e}"
 
         result = export_layout_preset(preset_name, export_path, layout_type="ui")
         if result:
@@ -87,8 +94,15 @@ def register_layout_tools(mcp, resolve, logger):
             import_path: Path to the preset file to import
             preset_name: Name to save the imported preset as (uses filename if None)
         """
+        from src.utils.path_validation import validate_path
+
         if resolve is None:
             return "Error: Not connected to DaVinci Resolve"
+
+        try:
+            import_path = validate_path(import_path, must_exist=True)
+        except ValueError as e:
+            return f"Error: {e}"
 
         result = import_layout_preset(import_path, preset_name, layout_type="ui")
 

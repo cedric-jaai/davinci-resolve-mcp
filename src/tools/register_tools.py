@@ -80,6 +80,12 @@ def register_database_tools(mcp, resolve):
     @mcp.tool()
     def import_project_file(file_path: str, project_name: str = None) -> str:
         """Import a project from file (.drp)."""
+        from src.utils.path_validation import validate_path, PROJECT_EXTENSIONS
+
+        try:
+            file_path = validate_path(file_path, allowed_extensions=PROJECT_EXTENSIONS, must_exist=True)
+        except ValueError as e:
+            return f"Error: {e}"
         return db_import_project(resolve, file_path, project_name)
 
     @mcp.tool()
@@ -87,6 +93,12 @@ def register_database_tools(mcp, resolve):
         project_name: str, file_path: str, with_stills_and_luts: bool = True
     ) -> str:
         """Export a project to file."""
+        from src.utils.path_validation import validate_path
+
+        try:
+            file_path = validate_path(file_path)
+        except ValueError as e:
+            return f"Error: {e}"
         return db_export_project(resolve, project_name, file_path, with_stills_and_luts)
 
     @mcp.tool()
@@ -98,6 +110,12 @@ def register_database_tools(mcp, resolve):
         archive_proxy_media: bool = False,
     ) -> str:
         """Archive a project with media."""
+        from src.utils.path_validation import validate_path
+
+        try:
+            file_path = validate_path(file_path)
+        except ValueError as e:
+            return f"Error: {e}"
         return db_archive_project(
             resolve,
             project_name,
@@ -110,6 +128,12 @@ def register_database_tools(mcp, resolve):
     @mcp.tool()
     def restore_project_from_archive(file_path: str, project_name: str = None) -> str:
         """Restore a project from archive."""
+        from src.utils.path_validation import validate_path
+
+        try:
+            file_path = validate_path(file_path, must_exist=True)
+        except ValueError as e:
+            return f"Error: {e}"
         return db_restore_project(resolve, file_path, project_name)
 
     @mcp.tool()
@@ -136,11 +160,23 @@ def register_media_storage_tools(mcp, resolve):
     @mcp.tool()
     def get_media_storage_subfolders(folder_path: str) -> List[str]:
         """Get list of subfolders in a Media Storage path."""
+        from src.utils.path_validation import validate_path
+
+        try:
+            folder_path = validate_path(folder_path)
+        except ValueError as e:
+            return [f"Error: {e}"]
         return ms_get_subfolders(resolve, folder_path)
 
     @mcp.tool()
     def get_media_storage_files(folder_path: str) -> List[str]:
         """Get list of files in a Media Storage path."""
+        from src.utils.path_validation import validate_path
+
+        try:
+            folder_path = validate_path(folder_path)
+        except ValueError as e:
+            return [f"Error: {e}"]
         return ms_get_files(resolve, folder_path)
 
     @mcp.tool()
@@ -151,7 +187,15 @@ def register_media_storage_tools(mcp, resolve):
     @mcp.tool()
     def add_files_to_media_pool(paths: List[str]) -> Dict[str, Any]:
         """Add files/folders from Media Storage to Media Pool."""
-        return ms_add_items(resolve, paths)
+        from src.utils.path_validation import validate_path
+
+        validated_paths = []
+        for p in paths:
+            try:
+                validated_paths.append(validate_path(p))
+            except ValueError as e:
+                return {"error": f"Invalid path '{p}': {e}"}
+        return ms_add_items(resolve, validated_paths)
 
 
 def register_gallery_tools(mcp, resolve):
@@ -218,7 +262,15 @@ def register_gallery_tools(mcp, resolve):
     @mcp.tool()
     def import_stills_to_album(album_name: str, file_paths: List[str]) -> str:
         """Import still images into a gallery album."""
-        return gal_import(resolve, album_name, file_paths)
+        from src.utils.path_validation import validate_path, STILL_EXTENSIONS
+
+        validated_paths = []
+        for p in file_paths:
+            try:
+                validated_paths.append(validate_path(p, allowed_extensions=STILL_EXTENSIONS, must_exist=True))
+            except ValueError as e:
+                return f"Error: Invalid path '{p}': {e}"
+        return gal_import(resolve, album_name, validated_paths)
 
     @mcp.tool()
     def export_stills_from_album(
@@ -228,6 +280,12 @@ def register_gallery_tools(mcp, resolve):
         format: str = "dpx",
     ) -> str:
         """Export stills from an album. Formats: dpx,cin,tif,jpg,png,ppm,bmp,xpm,drx."""
+        from src.utils.path_validation import validate_path
+
+        try:
+            folder_path = validate_path(folder_path)
+        except ValueError as e:
+            return f"Error: {e}"
         return gal_export(resolve, album_name, folder_path, file_prefix, format)
 
 
@@ -311,6 +369,17 @@ def register_timeline_export_tools(mcp, resolve):
         source_clips_path: str = None,
     ) -> str:
         """Import timeline from file (AAF/EDL/XML/FCPXML/DRT/ADL/OTIO)."""
+        from src.utils.path_validation import validate_path, TIMELINE_EXTENSIONS
+
+        try:
+            file_path = validate_path(file_path, allowed_extensions=TIMELINE_EXTENSIONS, must_exist=True)
+        except ValueError as e:
+            return f"Error: {e}"
+        if source_clips_path:
+            try:
+                source_clips_path = validate_path(source_clips_path)
+            except ValueError as e:
+                return f"Error: Invalid source clips path: {e}"
         return tl_import(
             resolve, file_path, timeline_name, import_source_clips, source_clips_path
         )
@@ -320,6 +389,12 @@ def register_timeline_export_tools(mcp, resolve):
         file_path: str, export_type: str, export_subtype: str = "NONE"
     ) -> str:
         """Export current timeline. Types: AAF,DRT,EDL,FCP_7_XML,FCPXML_1_8/9/10,etc."""
+        from src.utils.path_validation import validate_path
+
+        try:
+            file_path = validate_path(file_path)
+        except ValueError as e:
+            return f"Error: {e}"
         return tl_export(resolve, file_path, export_type, export_subtype)
 
     @mcp.resource("resolve://timeline/timecode")
@@ -347,6 +422,12 @@ def register_timeline_export_tools(mcp, resolve):
     @mcp.tool()
     def export_current_frame(file_path: str) -> str:
         """Export the current frame as a still image."""
+        from src.utils.path_validation import validate_path, STILL_EXTENSIONS
+
+        try:
+            file_path = validate_path(file_path, allowed_extensions=STILL_EXTENSIONS)
+        except ValueError as e:
+            return f"Error: {e}"
         return tl_export_frame(resolve, file_path)
 
 

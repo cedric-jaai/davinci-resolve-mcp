@@ -15,7 +15,8 @@ Based on best practices from "Controlling DaVinci Resolve from WSL2" documentati
 import subprocess
 import platform
 import logging
-from typing import Dict, Any, Optional
+import re
+from typing import Dict, Any, Optional, Set
 
 logger = logging.getLogger("davinci-resolve-mcp.keyboard_control")
 
@@ -26,6 +27,127 @@ FOCUS_RETRY_DELAY_MS = 100  # Delay between focus retries
 
 # Global state for user context preservation
 _saved_user_state: Optional[Dict[str, Any]] = None
+
+
+# ---------------------------------------------------------------------------
+# Keyboard Allowlist
+# ---------------------------------------------------------------------------
+# Safe special keys (SendKeys format)
+_SAFE_SPECIAL_KEYS: Set[str] = {
+    "{ESC}", "{ENTER}", "{TAB}", "{BACKSPACE}", "{DELETE}",
+    "{LEFT}", "{RIGHT}", "{UP}", "{DOWN}",
+    "{HOME}", "{END}",
+    "{F1}", "{F2}", "{F3}", "{F4}", "{F5}", "{F6}",
+    "{F7}", "{F8}", "{F9}", "{F10}", "{F11}", "{F12}",
+}
+
+# Safe single-character keys (letters, digits, punctuation used by Resolve)
+_SAFE_CHARS: Set[str] = set(
+    "abcdefghijklmnopqrstuvwxyz"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "0123456789"
+    " .,;'[]\\/-=+`"
+)
+
+# Build the full allowlist from the shortcuts dictionary.
+# This includes every SendKeys-format key that any known-safe shortcut uses,
+# plus the safe special keys and safe single chars above.
+def _build_allowed_keys() -> Set[str]:
+    """Build the set of allowed key strings from known-safe shortcuts."""
+    allowed = set()
+
+    # All safe specials on their own
+    allowed.update(_SAFE_SPECIAL_KEYS)
+
+    # All safe single characters on their own
+    allowed.update(_SAFE_CHARS)
+
+    # Modifier + single char combos (^ = Ctrl, + = Shift)
+    # We allow ^ and + freely, but restrict % (Alt) to only the combos
+    # that appear in the Resolve shortcuts dictionary.
+    _ctrl_shift_chars = set(
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789"
+        ".,;'[]\\/-=+`"
+    )
+    for ch in _ctrl_shift_chars:
+        allowed.add(f"^{ch}")        # Ctrl+key
+        allowed.add(f"+{ch}")        # Shift+key
+        allowed.add(f"^+{ch}")       # Ctrl+Shift+key
+        allowed.add(f"+^{ch}")       # Shift+Ctrl+key (alternate order)
+
+    # Modifier + special key combos (Ctrl/Shift variants)
+    for special in _SAFE_SPECIAL_KEYS:
+        allowed.add(f"^{special}")     # Ctrl+special
+        allowed.add(f"+{special}")     # Shift+special
+        allowed.add(f"^+{special}")    # Ctrl+Shift+special
+        allowed.add(f"+^{special}")    # Shift+Ctrl+special
+
+    # Alt (%) combos — ONLY the ones that map to known Resolve shortcuts.
+    # We explicitly enumerate these to prevent dangerous combos like %{F4}.
+    _allowed_alt_combos = {
+        # Marks
+        "%i", "%o", "%x",
+        # Markers
+        "%m",
+        # Editing
+        "%b", "%\\",
+        # Nodes (Color Page)
+        "%s", "%p", "%l", "%q", "%c", "%y",
+        # View
+        "%f", "%u",
+        # Color
+        "%d", "%a",
+        "%1", "%2", "%3", "%4",
+        # Transitions
+        "%t",
+        # Play around in
+        "% ",
+        # Ctrl+Alt combos used by Resolve
+        "^%k",       # keyboard customization
+        "^%g",       # grab still
+        "^%w",       # split screen
+        "^%-",       # volume down 1db
+        "^%=",       # volume up 1db
+    }
+    allowed.update(_allowed_alt_combos)
+
+    # Shift+Alt combos used by Resolve
+    _allowed_shift_alt_combos = {
+        "+%;",       # previous node
+        "+%'",       # next node
+    }
+    allowed.update(_allowed_shift_alt_combos)
+
+    return allowed
+
+
+ALLOWED_KEYS: Set[str] = _build_allowed_keys()
+
+
+def validate_key(key: str) -> str:
+    """Validate that a key string is in the allowlist.
+
+    Args:
+        key: The key in SendKeys format.
+
+    Returns:
+        The key unchanged if valid.
+
+    Raises:
+        ValueError: If the key is not in the allowlist.
+    """
+    if not key or not isinstance(key, str):
+        raise ValueError("Key must be a non-empty string")
+
+    if key in ALLOWED_KEYS:
+        return key
+
+    raise ValueError(
+        f"Key '{key}' is not in the allowed shortcuts list. "
+        "Only known-safe DaVinci Resolve shortcuts are permitted."
+    )
 
 
 def is_wsl() -> bool:
@@ -70,6 +192,12 @@ def send_key_to_resolve(
     Returns:
         Dict with success status and message
     """
+    # Validate key against allowlist before sending
+    try:
+        validate_key(key)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+
     platform_type = get_platform_type()
 
     if platform_type not in ["windows", "wsl"]:
@@ -315,17 +443,20 @@ def send_custom_key(key: str, description: str = "custom key") -> Dict[str, Any]
     """
     Send a custom key combination to DaVinci Resolve.
 
+    Only allowlisted keys are accepted (known-safe DaVinci Resolve shortcuts).
+
     Args:
         key: The key in SendKeys format
             - Regular keys: 'a', 'b', '1', etc.
             - Special keys: {ENTER}, {TAB}, {ESC}, {BACKSPACE}, {DELETE}
             - Arrow keys: {LEFT}, {RIGHT}, {UP}, {DOWN}
             - Function keys: {F1} through {F12}
-            - Modifiers: ^ for Ctrl, + for Shift, % for Alt
-            - Examples: '^s' (Ctrl+S), '+{F10}' (Shift+F10), '%{F4}' (Alt+F4)
+            - Modifiers: ^ for Ctrl, + for Shift, % for Alt (Alt restricted to known shortcuts)
+            - Examples: '^s' (Ctrl+S), '+{F10}' (Shift+F10)
         description: Optional description of the action
 
     Returns:
         Dict with success status and message
     """
+    # validate_key() is called inside send_key_to_resolve
     return send_key_to_resolve(key, description)

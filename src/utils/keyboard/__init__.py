@@ -14,6 +14,8 @@ from .core import (
     get_platform_type,
     send_key_to_resolve,
     send_custom_key,
+    validate_key,
+    ALLOWED_KEYS,
 )
 
 # Playback controls
@@ -249,6 +251,8 @@ __all__ = [
     "get_platform_type",
     "send_key_to_resolve",
     "send_custom_key",
+    "validate_key",
+    "ALLOWED_KEYS",
     # Playback
     "playback_play_pause",
     "playback_stop",

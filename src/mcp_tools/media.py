@@ -82,6 +82,12 @@ def register_media_tools(mcp, resolve, logger):
     def import_media(file_path: str) -> str:
         """Import media file into the current project's media pool."""
         from src.api.media_operations import import_media as import_media_func
+        from src.utils.path_validation import validate_path, MEDIA_EXTENSIONS
+
+        try:
+            file_path = validate_path(file_path, allowed_extensions=MEDIA_EXTENSIONS, must_exist=True)
+        except ValueError as e:
+            return f"Error: {e}"
 
         return import_media_func(resolve, file_path)
 

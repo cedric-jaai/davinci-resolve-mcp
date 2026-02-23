@@ -10,7 +10,11 @@ def register_utility_tools(mcp):
     @mcp.tool()
     def send_keyboard_shortcut(key: str, description: str = "") -> Dict[str, Any]:
         """
-        Send a custom keyboard shortcut to DaVinci Resolve.
+        Send a keyboard shortcut to DaVinci Resolve.
+
+        Only allowlisted shortcuts are accepted. Dangerous combos like
+        Alt+F4 (close application) are blocked. The Alt (%) modifier is
+        restricted to known Resolve shortcuts (e.g., %s for Add Serial Node).
 
         Args:
             key: The key in SendKeys format:
@@ -18,8 +22,8 @@ def register_utility_tools(mcp):
                 - Special keys: {ENTER}, {TAB}, {ESC}, {BACKSPACE}, {DELETE}
                 - Arrow keys: {LEFT}, {RIGHT}, {UP}, {DOWN}
                 - Function keys: {F1} through {F12}
-                - Modifiers: ^ for Ctrl, + for Shift, % for Alt
-                - Examples: '^s' (Ctrl+S), '+{F10}' (Shift+F10), '%{F4}' (Alt+F4)
+                - Modifiers: ^ for Ctrl, + for Shift, % for Alt (restricted)
+                - Examples: '^s' (Ctrl+S), '+{F10}' (Shift+F10)
             description: Optional description of the action
 
         Returns:

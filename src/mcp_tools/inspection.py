@@ -11,6 +11,80 @@ from src.utils.object_inspection import (
     print_object_help,
 )
 
+# Allowlist of safe Resolve API methods that can be called via inspect_custom_object.
+# Only read-only / getter methods are included. Destructive methods (Delete*, Set*,
+# Save*, Import*, Export*, etc.) are intentionally excluded.
+ALLOWED_METHODS = {
+    # Resolve top-level
+    "GetProjectManager",
+    "GetMediaStorage",
+    "GetProductName",
+    "GetVersion",
+    "GetVersionString",
+    # ProjectManager
+    "GetCurrentProject",
+    "GetCurrentDatabase",
+    "GetDatabaseList",
+    # Project
+    "GetCurrentTimeline",
+    "GetMediaPool",
+    "GetGallery",
+    "GetName",
+    "GetTimelineCount",
+    "GetCurrentRenderFormatAndCodec",
+    "GetCurrentRenderMode",
+    "GetRenderFormats",
+    "GetRenderCodecs",
+    "GetRenderPresets",
+    "GetRenderPresetList",
+    "GetRenderJobList",
+    "GetRenderJobStatus",
+    "GetSetting",
+    "GetTimelineByIndex",
+    "GetCurrentRenderFormatAndCodec",
+    "IsRenderingInProgress",
+    # Timeline
+    "GetCurrentVideoItem",
+    "GetCurrentClipThumbnailImage",
+    "GetTrackCount",
+    "GetItemListInTrack",
+    "GetMarkers",
+    "GetStartFrame",
+    "GetEndFrame",
+    "GetStartTimecode",
+    "GetTrackName",
+    # MediaPool
+    "GetRootFolder",
+    "GetCurrentFolder",
+    # MediaPool Folder
+    "GetClipList",
+    "GetSubFolderList",
+    "GetIsFolderStale",
+    # MediaPool Item / Clip
+    "GetClipProperty",
+    "GetDuration",
+    "GetAudioMapping",
+    "GetMetadata",
+    "GetUniqueId",
+    # MediaStorage
+    "GetMountedVolumeList",
+    "GetSubFolderList",
+    "GetFileList",
+    # Gallery
+    "GetCurrentStillAlbum",
+    "GetGalleryStillAlbums",
+    # Timeline Item
+    "GetStart",
+    "GetEnd",
+    "GetLeftOffset",
+    "GetRightOffset",
+    "GetFusionCompCount",
+    "GetFusionCompByIndex",
+    "GetFusionCompNameList",
+    "GetMediaPoolItem",
+    "GetNodeGraph",
+}
+
 
 def register_inspection_tools(mcp, resolve, logger):
     """Register object inspection MCP tools and resources."""
@@ -138,6 +212,9 @@ def register_inspection_tools(mcp, resolve, logger):
     def inspect_custom_object(object_path: str) -> Dict[str, Any]:
         """Inspect a custom DaVinci Resolve API object by path.
 
+        Only allowlisted read-only methods can be traversed. Dunder methods
+        and destructive operations (Delete, Set, Save, etc.) are blocked.
+
         Args:
             object_path: Path to the object using dot notation
                          (e.g., 'resolve.GetMediaStorage()')
@@ -157,6 +234,18 @@ def register_inspection_tools(mcp, resolve, logger):
 
                 if part.endswith("()"):
                     method_name = part[:-2]
+
+                    # Block dunder methods
+                    if method_name.startswith("__"):
+                        return {"error": f"Access to dunder methods is not allowed: '{method_name}'"}
+
+                    # Check allowlist
+                    if method_name not in ALLOWED_METHODS:
+                        return {
+                            "error": f"Method '{method_name}' is not in the allowed methods list. "
+                            "Only read-only Resolve API methods are permitted."
+                        }
+
                     if hasattr(obj, method_name) and callable(
                         getattr(obj, method_name)
                     ):
@@ -166,6 +255,10 @@ def register_inspection_tools(mcp, resolve, logger):
                             "error": f"Method '{method_name}' not found or not callable"
                         }
                 else:
+                    # Block dunder attributes
+                    if part.startswith("__"):
+                        return {"error": f"Access to dunder attributes is not allowed: '{part}'"}
+
                     if hasattr(obj, part):
                         obj = getattr(obj, part)
                     else:

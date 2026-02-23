@@ -28,6 +28,12 @@ def register_color_tools(mcp, resolve, logger):
     def apply_lut(lut_path: str, node_index: int = None) -> str:
         """Apply a LUT to a node in the color page."""
         from src.api.color_operations import apply_lut as apply_lut_func
+        from src.utils.path_validation import validate_path, LUT_EXTENSIONS
+
+        try:
+            lut_path = validate_path(lut_path, allowed_extensions=LUT_EXTENSIONS, must_exist=True)
+        except ValueError as e:
+            return f"Error: {e}"
 
         return apply_lut_func(resolve, lut_path, node_index)
 

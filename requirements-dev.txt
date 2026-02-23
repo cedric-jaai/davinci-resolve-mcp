@@ -1,0 +1,7 @@
+# Development / testing dependencies
+# Install with: pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+# HTTP library used by test/automation scripts
+requests==2.32.3

@@ -1,16 +1,21 @@
-<!-- ---
-!-- Timestamp: 2026-01-02 19:17:54
-!-- Author: ywatanabe
-!-- File: /home/ywatanabe/proj/davinci-resolve-mcp/CLAUDE.md
-!-- --- -->
+# DaVinci Resolve MCP Server
 
-# Autonomous Work
-You are running on emacs vterm and have ability to evaluate any Elisp code through emacs mcp server or emacsclient. Therefore, you can work autonomously by sending commands to yourself, such as `/mcp reconnect xxx` to the buffer you are running on.
+An MCP (Model Context Protocol) server for controlling DaVinci Resolve via its scripting API and keyboard simulation.
 
-Did you understand this autonomous rule? Which buffer are you running?
+## Project Structure
 
-# Log to files for debugging
+- `src/` - Main source code
+  - `api/` - DaVinci Resolve API wrappers
+  - `mcp_tools/` - MCP tool registration modules
+  - `tools/` - Tool registration and keyboard/capture tools
+  - `utils/` - Utilities (keyboard control, capture, path validation)
+- `tests/` - Test suite
+- `requirements.txt` - Production dependencies (pinned)
+- `requirements-dev.txt` - Development/testing dependencies
 
-Did you understand this debugging rule?
+## Security Notes
 
-<!-- EOF -->
+- Keyboard shortcuts are restricted to an allowlist of known-safe Resolve shortcuts
+- Desktop-wide screenshot capture requires `ALLOW_DESKTOP_CAPTURE=true` in environment
+- All file path parameters are validated against path traversal and sensitive directory access
+- The `inspect_custom_object` tool only allows read-only Resolve API methods

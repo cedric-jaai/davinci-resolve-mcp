@@ -53,6 +53,15 @@ def register_delivery_tools(mcp, resolve, logger):
         """
         from src.api.delivery_operations import add_to_render_queue as add_queue_func
 
+        from src.utils.path_validation import validate_path
+
+        # Validate target_dir if provided
+        if target_dir:
+            try:
+                target_dir = validate_path(target_dir)
+            except ValueError as e:
+                return {"error": f"Invalid target directory: {e}"}
+
         # Build render_settings dict if custom options provided
         render_settings = {}
         if target_dir:
@@ -90,6 +99,13 @@ def register_delivery_tools(mcp, resolve, logger):
     @mcp.tool()
     def link_proxy_media(clip_name: str, proxy_file_path: str) -> str:
         """Link a proxy media file to a clip."""
+        from src.utils.path_validation import validate_path, MEDIA_EXTENSIONS
+
+        try:
+            proxy_file_path = validate_path(proxy_file_path, allowed_extensions=MEDIA_EXTENSIONS, must_exist=True)
+        except ValueError as e:
+            return f"Error: {e}"
+
         if resolve is None:
             return "Error: Not connected to DaVinci Resolve"
 
@@ -169,6 +185,13 @@ def register_delivery_tools(mcp, resolve, logger):
     @mcp.tool()
     def replace_clip(clip_name: str, replacement_path: str) -> str:
         """Replace a clip with another media file."""
+        from src.utils.path_validation import validate_path, MEDIA_EXTENSIONS
+
+        try:
+            replacement_path = validate_path(replacement_path, allowed_extensions=MEDIA_EXTENSIONS, must_exist=True)
+        except ValueError as e:
+            return f"Error: {e}"
+
         if resolve is None:
             return "Error: Not connected to DaVinci Resolve"
 
