@@ -100,6 +100,24 @@ Ask your AI assistant things like:
 
 ---
 
+## TCP Bridge (macOS workaround)
+
+If the native scripting connection fails (e.g. endpoint security software blocks Mach ports), you can use the built-in TCP bridge instead. It runs a small Lua server inside Resolve's Fusion Console that the MCP server connects to over localhost.
+
+### Setup
+
+1. Open DaVinci Resolve → **Fusion** page → **Workspace → Console**
+2. In the Lua console, run:
+   ```lua
+   dofile("/path/to/davinci-resolve-mcp/src/utils/resolve_bridge_server.lua")
+   ```
+3. You should see: `[Bridge] Resolve Bridge Server listening on 127.0.0.1:9876`
+4. Start the MCP server normally — it auto-detects the bridge
+
+No changes to your MCP config are needed. The bridge is fully transparent to all tools.
+
+---
+
 ## Troubleshooting
 
 ### "Not connected to DaVinci Resolve"
@@ -107,6 +125,7 @@ Ask your AI assistant things like:
 1. Make sure Resolve is running
 2. Enable external scripting: **Preferences → System → General → External scripting using: Local**
 3. Restart Resolve after enabling
+4. If that still fails (e.g. on managed macOS), try the [TCP Bridge](#tcp-bridge-macos-workaround) above
 
 ### Check if it's working
 

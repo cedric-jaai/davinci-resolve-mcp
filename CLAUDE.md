@@ -13,6 +13,20 @@ An MCP (Model Context Protocol) server for controlling DaVinci Resolve via its s
 - `requirements.txt` - Production dependencies (pinned)
 - `requirements-dev.txt` - Development/testing dependencies
 
+## Tooling
+
+- Use `uv` for all Python package management (install, run, sync). Do NOT use pip.
+- Run tests with: `uv run pytest`
+- Install deps with: `uv pip install -r requirements.txt` or `uv sync`
+
+## TCP Bridge
+
+When native IPC is blocked (e.g. by endpoint security on managed macOS), the server falls back to a TCP bridge:
+- Lua server: `src/utils/resolve_bridge_server.lua` — run via `dofile()` in Resolve's Fusion Console
+- Python client: `src/utils/resolve_bridge.py` — `ResolveBridge` (TCP client) + `ResolveProxy` (transparent proxy)
+- Fallback logic in `src/core.py` (lines 73-83): tries bridge when `scriptapp()` returns `None`
+- Protocol: localhost:9876, 4-byte BE length-prefixed JSON, object registry with ID-based references
+
 ## Security Notes
 
 - Keyboard shortcuts are restricted to an allowlist of known-safe Resolve shortcuts
