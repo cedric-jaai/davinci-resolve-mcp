@@ -193,6 +193,31 @@ def _macos_list_windows_fallback() -> Dict[str, Any]:
     return {"success": False, "error": "Could not list windows on macOS"}
 
 
+_MACOS_MAX_WIDTH = 1920
+
+
+def _macos_compress_image(png_path: str, quality: int) -> str:
+    """Resize and convert a PNG to JPEG using sips. Returns path to the JPEG."""
+    jpg_path = png_path.rsplit(".", 1)[0] + ".jpg"
+
+    # Resize to max width (preserves aspect ratio, no-ops if already smaller)
+    subprocess.run(
+        ["sips", "--resampleWidth", str(_MACOS_MAX_WIDTH), png_path, "--out", png_path],
+        capture_output=True,
+        timeout=10,
+    )
+
+    # Convert to JPEG with quality
+    subprocess.run(
+        ["sips", "-s", "format", "jpeg", "-s", "formatOptions", str(quality),
+         png_path, "--out", jpg_path],
+        capture_output=True,
+        timeout=10,
+    )
+
+    return jpg_path
+
+
 def _macos_capture_window(
     window_id: int,
     output_path: str = None,
@@ -251,19 +276,30 @@ def _macos_capture_window(
             }
 
         if return_base64:
-            with open(capture_path, "rb") as f:
+            jpg_path = _macos_compress_image(capture_path, quality)
+            read_path = jpg_path if os.path.exists(jpg_path) else capture_path
+            with open(read_path, "rb") as f:
                 data = base64.b64encode(f.read()).decode()
-            return {"success": True, "base64": data, "format": "png"}
+            fmt = "jpeg" if read_path.endswith(".jpg") else "png"
+            return {"success": True, "base64": data, "format": fmt}
 
+        # For file output, compress in place
+        jpg_path = _macos_compress_image(capture_path, quality)
+        if os.path.exists(jpg_path):
+            if output_path and not output_path.endswith(".jpg"):
+                output_path = output_path.rsplit(".", 1)[0] + ".jpg"
+            return {"success": True, "path": jpg_path}
         return {"success": True, "path": output_path}
     except Exception as e:
         return {"success": False, "error": str(e)}
     finally:
-        if tmp_path and os.path.exists(tmp_path) and return_base64:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+        if tmp_path:
+            for p in [tmp_path, tmp_path.rsplit(".", 1)[0] + ".jpg"]:
+                if os.path.exists(p):
+                    try:
+                        os.unlink(p)
+                    except OSError:
+                        pass
 
 
 def _macos_capture_screenshot(
@@ -319,19 +355,30 @@ def _macos_capture_screenshot(
             }
 
         if return_base64:
-            with open(capture_path, "rb") as f:
+            jpg_path = _macos_compress_image(capture_path, quality)
+            read_path = jpg_path if os.path.exists(jpg_path) else capture_path
+            with open(read_path, "rb") as f:
                 data = base64.b64encode(f.read()).decode()
-            return {"success": True, "base64": data, "format": "png"}
+            fmt = "jpeg" if read_path.endswith(".jpg") else "png"
+            return {"success": True, "base64": data, "format": fmt}
 
+        # For file output, compress in place
+        jpg_path = _macos_compress_image(capture_path, quality)
+        if os.path.exists(jpg_path):
+            if output_path and not output_path.endswith(".jpg"):
+                output_path = output_path.rsplit(".", 1)[0] + ".jpg"
+            return {"success": True, "path": jpg_path}
         return {"success": True, "path": output_path}
     except Exception as e:
         return {"success": False, "error": str(e)}
     finally:
-        if tmp_path and os.path.exists(tmp_path) and return_base64:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+        if tmp_path:
+            for p in [tmp_path, tmp_path.rsplit(".", 1)[0] + ".jpg"]:
+                if os.path.exists(p):
+                    try:
+                        os.unlink(p)
+                    except OSError:
+                        pass
 
 
 def _macos_get_monitor_info() -> Dict[str, Any]:
