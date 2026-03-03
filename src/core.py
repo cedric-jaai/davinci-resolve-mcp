@@ -70,6 +70,18 @@ except ImportError as e:
 except Exception as e:
     logger.error(f"Error connecting to DaVinci Resolve: {e}")
 
+# Bridge fallback: connect via TCP if native IPC failed
+if resolve is None:
+    try:
+        from src.utils.resolve_bridge import ResolveBridge, ResolveProxy
+
+        bridge = ResolveBridge.connect()
+        if bridge:
+            resolve = ResolveProxy(bridge, 1)
+            logger.info("Connected to DaVinci Resolve via TCP bridge")
+    except Exception as e:
+        logger.debug(f"Bridge fallback not available: {e}")
+
 # Register all MCP tools and resources
 from src.mcp_tools import register_all_tools
 
