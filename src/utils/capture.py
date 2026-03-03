@@ -26,6 +26,11 @@ def is_windows() -> bool:
     return sys.platform == "win32"
 
 
+def is_macos() -> bool:
+    """Check if running on macOS."""
+    return sys.platform == "darwin"
+
+
 def find_powershell() -> Optional[str]:
     """Find PowerShell executable."""
     if is_windows():
@@ -98,6 +103,267 @@ def _save_image(png_data: bytes, output_path: str, quality: int) -> str:
         return output_path
 
 
+def _run_swift(script: str, timeout: int = 15) -> tuple:
+    """Run a Swift script and return (success, output, error)."""
+    try:
+        result = subprocess.run(
+            ["swift", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return True, result.stdout.strip(), None
+        return False, None, result.stderr.strip() or "Command failed"
+    except subprocess.TimeoutExpired:
+        return False, None, "Timeout"
+    except FileNotFoundError:
+        return False, None, "Swift not found"
+    except Exception as e:
+        return False, None, str(e)
+
+
+def _macos_list_windows() -> Dict[str, Any]:
+    """List visible windows on macOS using CoreGraphics via Swift."""
+    swift_script = """
+import CoreGraphics
+import Foundation
+
+let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+    print("[]")
+    exit(0)
+}
+
+var results: [[String: Any]] = []
+for window in windowList {
+    let ownerName = window[kCGWindowOwnerName as String] as? String ?? ""
+    let windowName = window[kCGWindowName as String] as? String ?? ""
+    let windowNumber = window[kCGWindowNumber as String] as? Int ?? 0
+    let ownerPID = window[kCGWindowOwnerPID as String] as? Int ?? 0
+    let layer = window[kCGWindowLayer as String] as? Int ?? 0
+    if layer == 0 && (ownerName.count > 0 || windowName.count > 0) {
+        results.append([
+            "Handle": windowNumber,
+            "Title": windowName,
+            "ProcessName": ownerName,
+            "PID": ownerPID
+        ])
+    }
+}
+
+if let data = try? JSONSerialization.data(withJSONObject: results, options: []),
+   let json = String(data: data, encoding: .utf8) {
+    print(json)
+}
+"""
+    success, output, error = _run_swift(swift_script)
+    if not success:
+        # Fallback: use pgrep to at least detect running processes
+        return _macos_list_windows_fallback()
+
+    import json
+
+    try:
+        windows = json.loads(output)
+    except json.JSONDecodeError:
+        return _macos_list_windows_fallback()
+
+    if isinstance(windows, dict):
+        windows = [windows]
+    return {"success": True, "windows": windows}
+
+
+def _macos_list_windows_fallback() -> Dict[str, Any]:
+    """Fallback window listing using pgrep when CoreGraphics is unavailable."""
+    try:
+        result = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to get name of every process whose visible is true'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            names = [n.strip() for n in result.stdout.strip().split(",")]
+            windows = [{"Handle": 0, "Title": "", "ProcessName": n} for n in names]
+            return {"success": True, "windows": windows}
+    except Exception:
+        pass
+    return {"success": False, "error": "Could not list windows on macOS"}
+
+
+def _macos_capture_window(
+    window_id: int,
+    output_path: str = None,
+    quality: int = 85,
+    return_base64: bool = False,
+) -> Dict[str, Any]:
+    """Capture a specific window on macOS using screencapture."""
+    import tempfile
+
+    if window_id == 0:
+        return {
+            "success": False,
+            "error": "Window ID unavailable. Grant Screen Recording permission in "
+                     "System Settings > Privacy & Security > Screen Recording for the "
+                     "app running this MCP server, then restart it.",
+        }
+
+    tmp_path = None
+    try:
+        if return_base64:
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            tmp_path = tmp.name
+            tmp.close()
+            capture_path = tmp_path
+        else:
+            if output_path is None:
+                os.makedirs(DEFAULT_OUTPUT_DIR, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_path = f"{DEFAULT_OUTPUT_DIR}/window_{window_id}_{timestamp}.png"
+            capture_path = output_path
+
+        result = subprocess.run(
+            ["screencapture", "-l", str(window_id), "-x", "-o", capture_path],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() if result.stderr else ""
+            if "could not create image" in error_msg.lower() or not error_msg:
+                return {
+                    "success": False,
+                    "error": "Screen capture failed. Grant Screen Recording permission in "
+                             "System Settings > Privacy & Security > Screen Recording for the "
+                             "app running this MCP server, then restart it.",
+                }
+            return {"success": False, "error": error_msg}
+
+        # Verify the file was actually created with content
+        if not os.path.exists(capture_path) or os.path.getsize(capture_path) == 0:
+            return {
+                "success": False,
+                "error": "Screen capture produced empty output. Grant Screen Recording permission in "
+                         "System Settings > Privacy & Security > Screen Recording for the "
+                         "app running this MCP server, then restart it.",
+            }
+
+        if return_base64:
+            with open(capture_path, "rb") as f:
+                data = base64.b64encode(f.read()).decode()
+            return {"success": True, "base64": data, "format": "png"}
+
+        return {"success": True, "path": output_path}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        if tmp_path and os.path.exists(tmp_path) and return_base64:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+def _macos_capture_screenshot(
+    output_path: str = None,
+    quality: int = 85,
+    monitor_id: int = 0,
+    capture_all: bool = False,
+    return_base64: bool = False,
+) -> Dict[str, Any]:
+    """Take a screenshot on macOS using screencapture."""
+    import tempfile
+
+    tmp_path = None
+    try:
+        if return_base64:
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            tmp_path = tmp.name
+            tmp.close()
+            capture_path = tmp_path
+        else:
+            if output_path is None:
+                os.makedirs(DEFAULT_OUTPUT_DIR, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_path = f"{DEFAULT_OUTPUT_DIR}/screenshot_{timestamp}.png"
+            capture_path = output_path
+
+        cmd = ["screencapture", "-x"]
+        if not capture_all:
+            # -D flag selects display (1-based index on macOS)
+            cmd.extend(["-D", str(monitor_id + 1)])
+        cmd.append(capture_path)
+
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() if result.stderr else ""
+            if "could not create image" in error_msg.lower() or not error_msg:
+                return {
+                    "success": False,
+                    "error": "Screen capture failed. Grant Screen Recording permission in "
+                             "System Settings > Privacy & Security > Screen Recording for the "
+                             "app running this MCP server, then restart it.",
+                }
+            return {"success": False, "error": error_msg}
+
+        if not os.path.exists(capture_path) or os.path.getsize(capture_path) == 0:
+            return {
+                "success": False,
+                "error": "Screen capture produced empty output. Grant Screen Recording permission in "
+                         "System Settings > Privacy & Security > Screen Recording for the "
+                         "app running this MCP server, then restart it.",
+            }
+
+        if return_base64:
+            with open(capture_path, "rb") as f:
+                data = base64.b64encode(f.read()).decode()
+            return {"success": True, "base64": data, "format": "png"}
+
+        return {"success": True, "path": output_path}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        if tmp_path and os.path.exists(tmp_path) and return_base64:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+def _macos_get_monitor_info() -> Dict[str, Any]:
+    """Get monitor info on macOS via JXA."""
+    script = """
+ObjC.import('Cocoa');
+var screens = $.NSScreen.screens;
+var monitors = [];
+for (var i = 0; i < screens.count; i++) {
+    var s = screens.objectAtIndex(i);
+    var frame = s.frame;
+    monitors.push({
+        Index: i,
+        DeviceName: ObjC.unwrap(s.localizedName),
+        Primary: i === 0,
+        Width: frame.size.width,
+        Height: frame.size.height,
+        X: frame.origin.x,
+        Y: frame.origin.y
+    });
+}
+JSON.stringify({Monitors: monitors, Count: monitors.length});
+"""
+    success, output, error = _run_osascript_jxa(script)
+    if not success:
+        return {"success": False, "error": error}
+
+    import json
+
+    return {"success": True, **json.loads(output)}
+
+
 def capture_screenshot(
     output_path: str = None,
     quality: int = 85,
@@ -118,8 +384,11 @@ def capture_screenshot(
     Returns:
         Dict with 'success', 'path' or 'base64', and optional 'error'
     """
+    if is_macos():
+        return _macos_capture_screenshot(output_path, quality, monitor_id, capture_all, return_base64)
+
     if not (is_wsl() or is_windows()):
-        return {"success": False, "error": "Not running on Windows or WSL"}
+        return {"success": False, "error": "Not running on Windows, WSL, or macOS"}
 
     # Build capture script
     ps_script = """
@@ -180,8 +449,11 @@ def capture_screenshot(
 
 def list_windows() -> Dict[str, Any]:
     """List all visible windows with their handles."""
+    if is_macos():
+        return _macos_list_windows()
+
     if not (is_wsl() or is_windows()):
-        return {"success": False, "error": "Not running on Windows or WSL"}
+        return {"success": False, "error": "Not running on Windows, WSL, or macOS"}
 
     ps_script = """
     Add-Type @'
@@ -227,8 +499,11 @@ def capture_window(
     return_base64: bool = False,
 ) -> Dict[str, Any]:
     """Capture a specific window by its handle."""
+    if is_macos():
+        return _macos_capture_window(window_handle, output_path, quality, return_base64)
+
     if not (is_wsl() or is_windows()):
-        return {"success": False, "error": "Not running on Windows or WSL"}
+        return {"success": False, "error": "Not running on Windows, WSL, or macOS"}
 
     ps_script = f"""
     Add-Type -AssemblyName System.Drawing
@@ -272,10 +547,21 @@ def find_resolve_window() -> Optional[Dict[str, Any]]:
     if not result.get("success"):
         return None
 
+    # First pass: match by process name (most reliable)
+    for window in result.get("windows", []):
+        process = window.get("ProcessName", "").lower()
+        if process == "resolve" or "davinci resolve" in process:
+            return window
+
+    # Second pass: match by window title (fallback)
     for window in result.get("windows", []):
         title = window.get("Title", "").lower()
         process = window.get("ProcessName", "").lower()
-        if "davinci resolve" in title or process == "resolve":
+        # Only match title if the process isn't a browser or other unrelated app
+        if "davinci resolve" in title and process not in (
+            "firefox", "chrome", "safari", "edge", "opera", "brave",
+            "msedge", "googlechronehelper",
+        ):
             return window
     return None
 
@@ -294,8 +580,11 @@ def capture_resolve_window(output_path: str = None, quality: int = 85, return_ba
 
 def get_monitor_info() -> Dict[str, Any]:
     """Get information about all monitors."""
+    if is_macos():
+        return _macos_get_monitor_info()
+
     if not (is_wsl() or is_windows()):
-        return {"success": False, "error": "Not running on Windows or WSL"}
+        return {"success": False, "error": "Not running on Windows, WSL, or macOS"}
 
     ps_script = """
     Add-Type -AssemblyName System.Windows.Forms
