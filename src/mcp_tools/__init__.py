@@ -19,6 +19,7 @@ from .layout import register_layout_tools
 from .app import register_app_tools
 from .cloud import register_cloud_tools
 from .properties import register_property_tools
+from .resource_reader import register_resource_reader_tools
 
 
 def register_all_tools(mcp, resolve, logger):
@@ -38,6 +39,7 @@ def register_all_tools(mcp, resolve, logger):
     register_app_tools(mcp, resolve, logger)
     register_cloud_tools(mcp, resolve, logger)
     register_property_tools(mcp, resolve, logger)
+    register_resource_reader_tools(mcp, resolve, logger)
 
 
 __all__ = [
@@ -57,4 +59,5 @@ __all__ = [
     "register_app_tools",
     "register_cloud_tools",
     "register_property_tools",
+    "register_resource_reader_tools",
 ]

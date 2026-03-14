@@ -51,7 +51,36 @@ logger.info(f"Using Resolve API path: {RESOLVE_API_PATH}")
 logger.info(f"Using Resolve library path: {RESOLVE_LIB_PATH}")
 
 # Create MCP server instance
-mcp = FastMCP("DaVinciResolveMCP")
+MCP_INSTRUCTIONS = """
+DaVinci Resolve MCP Server — controls DaVinci Resolve via its scripting API and keyboard simulation.
+
+## Prerequisites
+Most tools require a project to be open and a timeline to be active. Check state with
+read_resolve_resource("resolve://app/state") before starting. Some tools only work on
+specific pages (e.g., color tools need the Color page) — use switch_page to navigate first.
+
+## API vs Keyboard Tools
+- **API tools** (project, timeline, media, color, delivery) — direct Resolve API calls. Reliable and data-focused. Prefer these.
+- **Keyboard tools** (split, trim, playback, transitions) — simulate keystrokes. Require Resolve to be the active window. Work on macOS and Windows/WSL.
+
+## Reading Data
+Use read_resolve_resource(uri) to read any resource. Use list_resolve_resources() to discover
+all available URIs. Key resources:
+- resolve://timeline-items — all clips with ID, name, track, start/end frame, duration
+- resolve://current-timeline — current timeline info
+- resolve://timeline-clips — all timeline clips with positions
+- resolve://app/state — application state and connection info
+- resolve://media-pool-clips — all media pool clips
+- resolve://color/current-node — current color node info
+- resolve://delivery/render-queue/status — render queue status
+
+## Common Workflows
+- **Split at specific points:** read_resolve_resource("resolve://timeline-items") → set_playhead_timecode → split_clip
+- **Color grade:** switch_page("color") → read_resolve_resource("resolve://color/current-node") → set_color_wheel_param or apply_lut
+- **Export:** add_to_render_queue → start_render → read_resolve_resource("resolve://delivery/render-queue/status")
+""".strip()
+
+mcp = FastMCP("DaVinciResolveMCP", instructions=MCP_INSTRUCTIONS)
 
 # Initialize DaVinci Resolve connection
 resolve = None
