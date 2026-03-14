@@ -100,14 +100,18 @@ class TestSendKeyToResolve:
             assert result["success"] is False
             assert "not supported" in result["error"]
 
-    def test_returns_error_on_macos(self):
-        """Should return error when running on macOS."""
+    def test_calls_osascript_on_macos(self):
+        """Should call osascript when running on macOS."""
         from src.utils.keyboard.core import send_key_to_resolve
 
         with patch("src.utils.keyboard.core.get_platform_type", return_value="macos"):
-            result = send_key_to_resolve(" ", "test")
-            assert result["success"] is False
-            assert "macos" in result["error"]
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = Mock(stdout="", stderr="", returncode=0)
+                result = send_key_to_resolve(" ", "test")
+                assert result["success"] is True
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args
+                assert call_args[0][0][0] == "osascript"
 
     def test_calls_powershell_on_wsl(self):
         """Should call PowerShell on WSL platform."""

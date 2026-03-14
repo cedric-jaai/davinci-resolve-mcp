@@ -172,6 +172,96 @@ def get_platform_type() -> str:
     return "unknown"
 
 
+# ---------------------------------------------------------------------------
+# macOS key code mapping for AppleScript
+# ---------------------------------------------------------------------------
+_MACOS_KEY_CODES: Dict[str, int] = {
+    "{ESC}": 53,
+    "{ENTER}": 36,
+    "{TAB}": 48,
+    "{BACKSPACE}": 51,
+    "{DELETE}": 117,
+    "{LEFT}": 123,
+    "{RIGHT}": 124,
+    "{UP}": 126,
+    "{DOWN}": 125,
+    "{HOME}": 115,
+    "{END}": 119,
+    "{F1}": 122, "{F2}": 120, "{F3}": 99, "{F4}": 118,
+    "{F5}": 96, "{F6}": 97, "{F7}": 98, "{F8}": 100,
+    "{F9}": 101, "{F10}": 109, "{F11}": 103, "{F12}": 111,
+}
+
+
+def _send_key_macos(key: str, description: str = "") -> Dict[str, Any]:
+    """Send a keystroke to DaVinci Resolve on macOS using osascript.
+
+    Translates SendKeys format to AppleScript. On macOS, Ctrl (^) maps to
+    Command because Resolve uses Cmd where Windows uses Ctrl for the same
+    shortcuts.
+    """
+    # Parse modifiers from the beginning of the key string
+    modifiers = []
+    i = 0
+    while i < len(key) and key[i] in ("^", "+", "%"):
+        if key[i] == "^":
+            modifiers.append("command down")
+        elif key[i] == "+":
+            modifiers.append("shift down")
+        elif key[i] == "%":
+            modifiers.append("option down")
+        i += 1
+    remainder = key[i:]
+
+    if not remainder:
+        return {"success": False, "error": f"No key character found in '{key}'"}
+
+    modifier_clause = ""
+    if modifiers:
+        modifier_clause = " using {" + ", ".join(modifiers) + "}"
+
+    # Determine if it's a special key (e.g. {DELETE}) or a character
+    if remainder.startswith("{") and remainder.endswith("}"):
+        upper = remainder.upper()
+        if upper not in _MACOS_KEY_CODES:
+            return {"success": False, "error": f"Unknown special key: {remainder}"}
+        key_code = _MACOS_KEY_CODES[upper]
+        keystroke_line = f"key code {key_code}{modifier_clause}"
+    else:
+        # Single character — escape backslash and quote for AppleScript
+        char = remainder
+        escaped = char.replace("\\", "\\\\").replace('"', '\\"')
+        keystroke_line = f'keystroke "{escaped}"{modifier_clause}'
+
+    script = (
+        'tell application "DaVinci Resolve" to activate\n'
+        "delay 0.2\n"
+        "tell application \"System Events\"\n"
+        f"    {keystroke_line}\n"
+        "end tell"
+    )
+
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            action_desc = description if description else f"key '{key}'"
+            logger.info(f"Sent {action_desc} to Resolve (macOS)")
+            return {"success": True, "message": f"Successfully sent {action_desc}"}
+        else:
+            error_msg = result.stderr.strip() or result.stdout.strip()
+            logger.error(f"osascript error: {error_msg}")
+            return {"success": False, "error": f"osascript error: {error_msg}"}
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "Timeout waiting for osascript"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def send_key_to_resolve(
     key: str,
     description: str = "",
@@ -199,6 +289,9 @@ def send_key_to_resolve(
         return {"success": False, "error": str(e)}
 
     platform_type = get_platform_type()
+
+    if platform_type == "macos":
+        return _send_key_macos(key, description)
 
     if platform_type not in ["windows", "wsl"]:
         return {
